@@ -116,7 +116,7 @@ def parse_tlm_file(file_obj: BytesIO):
 
 def parse_main_header_block(block, session_id:int = 1):
     model_type_b = block[4:5]
-    bind_info_b = block[5:6]
+    bind_info_b = block[6:7]
     # Model name may have 2 extra leading bytes if bind_info_b is 0xb2, and no leading bytes if bind_info_b is 0x00 (based on small test set)
     if bind_info_b == b'\xb2':
         model_name_b = block[12:22]
@@ -347,6 +347,11 @@ def parse_gps_loc(block):
         longitude = longitude + 100.
     if not gps_flags['gpsLoc_isEast']:
         longitude = longitude * -1
+
+    if longitude < -180:
+        longitude = longitude + 100
+    if longitude > 180:
+        longitude = longitude - 100
 
     return {'gpsLoc_sid': sid, 'gpsLoc_altitudeLow_m': altitudeLow, 'gpsLoc_latitude_deg': latitude, 'gpsLoc_longitude_deg': longitude, 'gpsLoc_course': course, 'gpsLoc_hdop': hdop, **gps_flags}
 
