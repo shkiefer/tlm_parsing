@@ -90,8 +90,8 @@ def parse_tlm_file(file_obj: BytesIO):
         if struct.unpack('<I', block_ts)[0] == 0xFFFFFFFF:
             # header block
             block = file_bytes[i:i+36]
-            # TODO test more, trial and error for secondary criteria 
-            if (block[4] & 0xFF) != (block[5] & 0xFF) and block[4:5] != b'\x12':
+            # TODO test if this is always true
+            if (block[4] & 0xFF) != (block[5] & 0xFF) and b"'" in block:
                 session_id += 1
                 main_header_dics.append(
                     parse_main_header_block(block, session_id=session_id)
@@ -117,11 +117,16 @@ def parse_tlm_file(file_obj: BytesIO):
 def parse_main_header_block(block, session_id:int = 1):
     model_type_b = block[4:5]
     bind_info_b = block[5:6]
-    model_name_b = block[12:22]
+    # Model name may have 2 extra leading bytes if bind_info_b is 0xb2, and no leading bytes if bind_info_b is 0x00 (based on small test set)
+    if bind_info_b == b'\xb2':
+        model_name_b = block[12:22]
+    elif bind_info_b == b'\x00':
+        model_name_b = block[10:22]
     buffer_data_b = block[22:35]
     
     model_type = {b'\x00':'Fixed Wing', b'\x01': 'Helicopter', b'\02': 'Glider'}.get(model_type_b, 'Unknown')
-    bind_info = {b'\x01': 'DSM2 6000', b'\x02': 'DSM2 8000 RX', b'\03':'DSMX 8000 RX', b'\x04': 'DMSX 6000 RX'}.get(bind_info_b, 'Unknown')
+    bind_info = {b'\xb2': 'DSMX 22ms', b'\x00': 'iXxx', b'\x01': 'DSM2 6000', b'\x02': 'DSM2 8000 RX', b'\03':'DSMX 8000 RX', b'\x04': 'DMSX 6000 RX'}.get(bind_info_b, 'Unknown')
+
 
     model_name = model_name_b.rstrip(b'\x00').decode('ascii')
     # TODO parse buffer data?
@@ -477,6 +482,9 @@ def assemble_tlm_data(data_dics):
 
             dfi = dfi.drop_duplicates(keep='first', subset='timestamp_ms').set_index('timestamp_ms', drop=True).sort_index()
             dfs.append(dfi)  
+        # handle case when no known data is in set
+        if len(dfs) == 0:
+            continue
         df = pd.concat(dfs, axis=1, ignore_index=False).sort_index()
         df = df.reset_index(drop=False)
         df['Session ID'] = session_id
