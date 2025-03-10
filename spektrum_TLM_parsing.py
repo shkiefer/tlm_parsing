@@ -61,6 +61,7 @@ def parse_tlm_file(file_obj: BytesIO):
     - GForce
     - JetCat interface
     - GPS Location & Status
+    - SkyID GPS Location & Status
     - Standard Telemetry
     - RX Telemetry
 
@@ -90,8 +91,7 @@ def parse_tlm_file(file_obj: BytesIO):
         if struct.unpack('<I', block_ts)[0] == 0xFFFFFFFF:
             # header block
             block = file_bytes[i:i+36]
-            # TODO test if this is always true
-            if (block[4] & 0xFF) != (block[5] & 0xFF) and b"'" in block:
+            if block[4] != block[5] and b"'" in block[9:22]:
                 session_id += 1
                 main_header_dics.append(
                     parse_main_header_block(block, session_id=session_id)
@@ -124,7 +124,7 @@ def parse_main_header_block(block, session_id:int = 1):
         model_name_b = block[10:22]
     buffer_data_b = block[22:35]
     
-    model_type = {b'\x00':'Fixed Wing', b'\x01': 'Helicopter', b'\02': 'Glider'}.get(model_type_b, 'Unknown')
+    model_type = {b'\x03':'Fixed Wing', b'\x01': 'Helicopter', b'\02': 'Glider'}.get(model_type_b, 'Unknown')
     bind_info = {b'\xb2': 'DSMX 22ms', b'\x00': 'iXxx', b'\x01': 'DSM2 6000', b'\x02': 'DSM2 8000 RX', b'\03':'DSMX 8000 RX', b'\x04': 'DMSX 6000 RX'}.get(bind_info_b, 'Unknown')
 
 
@@ -158,6 +158,7 @@ def parse_supplemental_header_block(block, session_id:int=1):
         (0x14, 0x14): 'G-Force Sensor',
         (0x15, 0x15): 'JetCat Sensor',
         (0x16, 0x16): 'GPS Sensor',
+        (0x16, 0x27): 'SkyID GPS Sensor',
         (0x17, 0x17): 'end of header',
         (0x7E, 0x7E): 'RPM Sensor',
         (0x7F, 0x7F): 'RX Telemetry',
@@ -173,6 +174,7 @@ def parse_supplemental_header_block(block, session_id:int=1):
 
     supplemental_header_dic = {
         'session_id': session_id,
+        'sensor_keys': f'\\x{sensor_type_b[0]:02x}, \\x{sensor_type_b[1]:02x}',
         'sensor_type': sensor_type,
         # 'tel_setup': tel_setup,
         # 'buffer_data': buffer_data
@@ -221,6 +223,17 @@ def parse_data_block(block, session_id:int = 1):
     elif data_type == 0x17:
         data_name = 'GPS Status'
         data_dic.update({'data_type': data_name, 'data': parse_gps_stats(block)})
+    elif data_type == 0x27:
+        sid = block[5]
+        if sid == 0x16:
+            data_name = 'SkyID GPS Location'
+            data_dic.update({'data_type': data_name, 'data': parse_gps_loc(block)})
+        elif sid == 0x17:
+            data_name = 'skyID GPS Status'
+            data_dic.update({'data_type': data_name, 'data': parse_gps_stats(block)})
+        else:
+            data_name = 'skyID Unknown'
+            data_dic.update({'data_type': data_name, 'data': ' '.join([f'\\x{byte:02x}' for byte in block])})
     elif data_type == 0x7E:
         data_name = 'Standard Receiver Telemetry'
         data_dic.update({'data_type': data_name, 'data': parse_standard_receiver_telemetry(block)})
